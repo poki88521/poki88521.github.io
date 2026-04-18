@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>随机五角星阵列</title>
+  <style>
+    html,body { height:100%; margin:0; background:#000; }
+    canvas { display:block; width:100%; height:100%; }
+  </style>
+</head>
+<body>
+  <canvas id="stars"></canvas>
+
+  <script>
+    const canvas = document.getElementById('stars');
+    const ctx = canvas.getContext('2d');
+
+    function resize() {
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(canvas.clientWidth * dpr);
+      canvas.height = Math.floor(canvas.clientHeight * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // 画五角星：cx,cy 中心；outer 半径；inner 半径；rotation 角度（弧度）
+    function drawStar(ctx, cx, cy, outer, inner, rotation) {
+      ctx.beginPath();
+      const spikes = 5;
+      const step = Math.PI / spikes;
+      let angle = rotation;
+      for (let i = 0; i < spikes; i++) {
+        // outer point
+        ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer);
+        angle += step;
+        // inner point
+        ctx.lineTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner);
+        angle += step;
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // 随机生成若干星星
+    const stars = [];
+    const count = 120; // 星星数量，按需调整
+    const w = () => canvas.clientWidth;
+    const h = () => canvas.clientHeight;
+
+    for (let i = 0; i < count; i++) {
+      const size = Math.random() * 8 + 2; // outer 半径
+      stars.push({
+        x: Math.random() * w(),
+        y: Math.random() * h(),
+        outer: size,
+        inner: size * (0.45 + Math.random() * 0.15),
+        rotation: Math.random() * Math.PI * 2,
+        hue: 50 + Math.random() * 60, // 黄到白
+        strokeAlpha: 0.6 + Math.random() * 0.4,
+        baseAlpha: 0.5 + Math.random() * 0.5,
+        speed: 0.5 + Math.random() * 2,
+        phase: Math.random() * Math.PI * 2
+      });
+    }
+
+    let last = performance.now();
+    function animate(now) {
+      const dt = (now - last) / 1000;
+      last = now;
+
+      // 清屏
+      ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+
+      // 背景微暗渐变（可选）
+      const grad = ctx.createLinearGradient(0, 0, 0, canvas.clientHeight);
+      grad.addColorStop(0, '#000011');
+      grad.addColorStop(1, '#000000');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+
+      // 绘制星星
+      for (const s of stars) {
+        // 位置随窗口可能改变（简单处理：当尺寸变化时不移动已有星星）
+        // 让星星微微闪烁
+        const alpha = s.baseAlpha * (0.6 + 0.4 * Math.sin(now * 0.001 * s.speed + s.phase));
+        ctx.save();
+        ctx.translate(s.x, s.y);
+        ctx.rotate(s.rotation + 0.2 * Math.sin(now * 0.001 * s.speed + s.phase));
+        ctx.translate(-s.x, -s.y);
+
+        ctx.fillStyle = `hsla(${s.hue}, 90%, 70%, ${alpha})`;
+        ctx.strokeStyle = `rgba(255,255,255,${s.strokeAlpha * 0.6})`;
+        ctx.lineWidth = Math.max(0.5, s.outer * 0.06);
+        ctx.shadowColor = `hsla(${s.hue},90%,80%,${alpha * 0.9})`;
+        ctx.shadowBlur = Math.max(0, s.outer * 0.8);
+
+        drawStar(ctx, s.x, s.y, s.outer, s.inner, s.rotation);
+        ctx.restore();
+      }
+
+      requestAnimationFrame(animate);
+    }
+
+    // 若窗口大小有较大变更，可重新分布星星（可选）
+    window.addEventListener('resize', () => {
+      resize();
+      // 可选：重新布置星星以利用新尺寸
+      for (const s of stars) {
+        s.x = Math.random() * w();
+        s.y = Math.random() * h();
+      }
+    });
+
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>
