@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前后端连接测试</title>
+    <style>
+        body {
+            font-family: system-ui, 'Segoe UI', sans-serif;
+            max-width: 600px;
+            margin: 3rem auto;
+            padding: 1rem;
+            background: #f5f7fb;
+        }
+        .card {
+            background: white;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        h2 {
+            margin-top: 0;
+            color: #1e293b;
+        }
+        input, button {
+            font-size: 1rem;
+            padding: 0.6rem 1rem;
+            border-radius: 2rem;
+            border: 1px solid #cbd5e1;
+        }
+        input {
+            flex: 1;
+            margin-right: 0.5rem;
+        }
+        .input-group {
+            display: flex;
+            margin: 1rem 0;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: 0.1s;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        .response-area {
+            background: #f1f5f9;
+            border-radius: 1rem;
+            padding: 1rem;
+            margin-top: 1rem;
+            min-height: 100px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .status {
+            font-size: 0.85rem;
+            color: #475569;
+            margin-top: 0.5rem;
+        }
+        .error {
+            color: #dc2626;
+        }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h2>🔌 前后端连接测试</h2>
+    <p>发送任意文本到后端，后端会返回带前缀的回复。</p>
+
+    <div class="input-group">
+        <input type="text" id="messageInput" placeholder="输入测试消息，例如 Hello" />
+        <button id="sendBtn">发送请求</button>
+    </div>
+
+    <div class="response-area" id="responseArea">
+        等待请求...
+    </div>
+    <div class="status" id="statusMsg"></div>
+</div>
+
+<script>
+    // ⭐⭐⭐ 重要：将下面的 URL 改成你实际部署的后端地址 ⭐⭐⭐
+    const API_URL = "https://backend-echo.vercel.app/api/echo";   // 改成你的
+
+    const input = document.getElementById('messageInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const responseArea = document.getElementById('responseArea');
+    const statusMsg = document.getElementById('statusMsg');
+
+    async function sendMessage() {
+        const message = input.value.trim();
+        if (!message) {
+            responseArea.innerText = '⚠️ 请输入消息';
+            return;
+        }
+
+        // 显示加载状态
+        responseArea.innerHTML = '⏳ 发送请求中...';
+        statusMsg.innerText = `请求地址: ${API_URL}`;
+        sendBtn.disabled = true;
+
+        try {
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: message })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            // 后端返回格式应为 { reply: "xxx" }
+            const reply = data.reply || JSON.stringify(data);
+            responseArea.innerHTML = `✅ 后端回复：<strong>${escapeHtml(reply)}</strong>`;
+            statusMsg.innerHTML = `✅ 请求成功 | 时间: ${new Date().toLocaleTimeString()}`;
+        } catch (error) {
+            responseArea.innerHTML = `❌ 连接失败：${error.message}`;
+            statusMsg.innerHTML = `❌ 错误详情: ${error.message}<br>请检查后端地址是否正确、是否支持 CORS，以及后端服务是否运行。`;
+            console.error(error);
+        } finally {
+            sendBtn.disabled = false;
+        }
+    }
+
+    function escapeHtml(str) {
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendMessage();
+    });
+
+    // 页面加载时显示当前配置的后端地址
+    statusMsg.innerHTML = `当前后端地址: ${API_URL}<br>发送消息测试连接。`;
+</script>
+</body>
+</html>
