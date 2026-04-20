@@ -1,120 +1,280 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>随机五角星阵列</title>
-  <style>
-    html,body { height:100%; margin:0; background:#000; }
-    canvas { display:block; width:100%; height:100%; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D点云生成器</title>
+    <!-- 1. 引入Three.js核心库 -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <!-- 2. 必须补加：OrbitControls轨道控制器（你之前缺失的关键！） -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- 3. 稳定的XLSX库 -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        #dragArea {
+            height: 25vh;
+            background-color: #f0f0f0;
+            border: 2px dashed #ccc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            color: #666;
+        }
+        #dragArea.dragover {
+            background-color: #e0e0e0;
+            border-color: #999;
+        }
+        #main {
+            flex: 1;
+            display: flex;
+        }
+        #fileList {
+            width: 300px;
+            background-color: #f9f9f9;
+            padding: 10px;
+            overflow-y: auto;
+        }
+        #fileList ul {
+            list-style: none;
+            padding: 0;
+        }
+        #fileList li {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        #fileList button {
+            background: red;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        #canvas {
+            flex: 1;
+        }
+        #generateBtn {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        #generateBtn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        #progress {
+            position: absolute;
+            bottom: 50px;
+            left: 10px;
+            color: blue;
+            font-size: 14px;
+        }
+    </style>
 </head>
 <body>
-  <canvas id="stars"></canvas>
+    <div id="dragArea">把文件拖拽此处</div>
+    <div id="main">
+        <div id="fileList">
+            <h3>已读取文件</h3>
+            <ul id="fileUl"></ul>
+        </div>
+        <div id="canvas"></div>
+    </div>
+    <div id="progress"></div>
+    <button id="generateBtn">确认生成</button>
 
-  <script>
-    const canvas = document.getElementById('stars');
-    const ctx = canvas.getContext('2d');
+    <script>
+        const dragArea = document.getElementById('dragArea');
+        const fileUl = document.getElementById('fileUl');
+        const generateBtn = document.getElementById('generateBtn');
+        const canvas = document.getElementById('canvas');
+        const progressDiv = document.getElementById('progress');
 
-    function resize() {
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.floor(canvas.clientWidth * dpr);
-      canvas.height = Math.floor(canvas.clientHeight * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
-    window.addEventListener('resize', resize);
-    resize();
+        let files = [];
+        let scene, camera, renderer, controls;
 
-    // 画五角星：cx,cy 中心；outer 半径；inner 半径；rotation 角度（弧度）
-    function drawStar(ctx, cx, cy, outer, inner, rotation) {
-      ctx.beginPath();
-      const spikes = 5;
-      const step = Math.PI / spikes;
-      let angle = rotation;
-      for (let i = 0; i < spikes; i++) {
-        // outer point
-        ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer);
-        angle += step;
-        // inner point
-        ctx.lineTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner);
-        angle += step;
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-    }
+        // 初始化Three.js
+        function initThreeJS() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: false });
+            renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+            canvas.appendChild(renderer.domElement);
+            renderer.setClearColor(0x000000);
 
-    // 随机生成若干星星
-    const stars = [];
-    const count = 120; // 星星数量，按需调整
-    const w = () => canvas.clientWidth;
-    const h = () => canvas.clientHeight;
+            const xColor = 0x0000ff;
+            const yColor = 0x00ff00;
+            const zColor = 0xff0000;
+            const axisRadius = 0.3;
+            const axisLength = 200;
+            const gridSize = 300;
+            const gridDivisions = 30;
+            const createAxis = (color, dir) => {
+                const mat = new THREE.MeshBasicMaterial({ color });
+                const geo = new THREE.CylinderGeometry(axisRadius, axisRadius, axisLength, 8);
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.position.copy(dir.clone().multiplyScalar(axisLength / 2));
+                mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+                return mesh;
+            };
+            scene.add(createAxis(xColor, new THREE.Vector3(1, 0, 0)));
+            scene.add(createAxis(yColor, new THREE.Vector3(0, 1, 0)));
+            scene.add(createAxis(zColor, new THREE.Vector3(0, 0, 1)));
 
-    for (let i = 0; i < count; i++) {
-      const size = Math.random() * 8 + 2; // outer 半径
-      stars.push({
-        x: Math.random() * w(),
-        y: Math.random() * h(),
-        outer: size,
-        inner: size * (0.45 + Math.random() * 0.15),
-        rotation: Math.random() * Math.PI * 2,
-        hue: 50 + Math.random() * 60, // 黄到白
-        strokeAlpha: 0.6 + Math.random() * 0.4,
-        baseAlpha: 0.5 + Math.random() * 0.5,
-        speed: 0.5 + Math.random() * 2,
-        phase: Math.random() * Math.PI * 2
-      });
-    }
+            // 三个平面网格（xoy/zox/yoz）
+            const gridXY = new THREE.GridHelper(gridSize, gridDivisions, xColor, xColor);
+            scene.add(gridXY);
+            const gridXZ = new THREE.GridHelper(gridSize, gridDivisions, zColor, zColor);
+            gridXZ.rotation.x = Math.PI / 2;
+            scene.add(gridXZ);
+            const gridYZ = new THREE.GridHelper(gridSize, gridDivisions, yColor, yColor);
+            gridYZ.rotation.z = Math.PI / 2;
+            scene.add(gridYZ);
 
-    let last = performance.now();
-    function animate(now) {
-      const dt = (now - last) / 1000;
-      last = now;
+            // 相机位置
+            camera.position.set(50, 50, 50);
+            camera.lookAt(0, 0, 0);
 
-      // 清屏
-      ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+            // 控制器（无阻尼/无惯性，最简配置）
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = false;
+            controls.enablePan = false;
+            controls.enableZoom = true;
+            controls.enableRotate = true;
 
-      // 背景微暗渐变（可选）
-      const grad = ctx.createLinearGradient(0, 0, 0, canvas.clientHeight);
-      grad.addColorStop(0, '#000011');
-      grad.addColorStop(1, '#000000');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+            animate();
+        }
 
-      // 绘制星星
-      for (const s of stars) {
-        // 位置随窗口可能改变（简单处理：当尺寸变化时不移动已有星星）
-        // 让星星微微闪烁
-        const alpha = s.baseAlpha * (0.6 + 0.4 * Math.sin(now * 0.001 * s.speed + s.phase));
-        ctx.save();
-        ctx.translate(s.x, s.y);
-        ctx.rotate(s.rotation + 0.2 * Math.sin(now * 0.001 * s.speed + s.phase));
-        ctx.translate(-s.x, -s.y);
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
 
-        ctx.fillStyle = `hsla(${s.hue}, 90%, 70%, ${alpha})`;
-        ctx.strokeStyle = `rgba(255,255,255,${s.strokeAlpha * 0.6})`;
-        ctx.lineWidth = Math.max(0.5, s.outer * 0.06);
-        ctx.shadowColor = `hsla(${s.hue},90%,80%,${alpha * 0.9})`;
-        ctx.shadowBlur = Math.max(0, s.outer * 0.8);
+        // 拖拽事件
+        dragArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dragArea.classList.add('dragover');
+        });
+        dragArea.addEventListener('dragleave', () => {
+            dragArea.classList.remove('dragover');
+        });
+        dragArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dragArea.classList.remove('dragover');
+            const droppedFiles = Array.from(e.dataTransfer.files).filter(file => 
+                file.name.endsWith('.xlsx') || file.name.endsWith('.xls')
+            );
+            files.push(...droppedFiles);
+            updateFileList();
+        });
 
-        drawStar(ctx, s.x, s.y, s.outer, s.inner, s.rotation);
-        ctx.restore();
-      }
+        function updateFileList() {
+            fileUl.innerHTML = '';
+            files.forEach((file, index) => {
+                const li = document.createElement('li');
+                li.textContent = file.name;
+                const btn = document.createElement('button');
+                btn.textContent = '删除';
+                btn.onclick = () => {
+                    files.splice(index, 1);
+                    updateFileList();
+                };
+                li.appendChild(btn);
+                fileUl.appendChild(li);
+            });
+        }
 
-      requestAnimationFrame(animate);
-    }
+        // 生成点云
+        generateBtn.addEventListener('click', async () => {
+            if (files.length === 0) {
+                progressDiv.textContent = '错误：请先拖拽上传Excel文件！';
+                return;
+            }
+            generateBtn.disabled = true;
+            generateBtn.textContent = '生成中...';
+            progressDiv.textContent = '开始读取Excel...';
 
-    // 若窗口大小有较大变更，可重新分布星星（可选）
-    window.addEventListener('resize', () => {
-      resize();
-      // 可选：重新布置星星以利用新尺寸
-      for (const s of stars) {
-        s.x = Math.random() * w();
-        s.y = Math.random() * h();
-      }
-    });
+            let allPoints = [];
+            try {
+                // 读取所有Excel
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    progressDiv.textContent = `正在读取：${file.name}`;
+                    const data = await file.arrayBuffer();
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
-    requestAnimationFrame(animate);
-  </script>
+                    // 读取规则：跳过表头，第3/4/5列=XYZ
+                    for (let row = 1; row < json.length; row++) {
+                        const item = json[row];
+                        if (item && item.length >= 5) {
+                            const x = parseFloat(item[2]);
+                            const y = parseFloat(item[3]);
+                            const z = parseFloat(item[4]);
+                            if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
+                                allPoints.push(x, y, z);
+                            }
+                        }
+                    }
+                }
+
+                if (allPoints.length === 0) {
+                    progressDiv.textContent = '错误：未读取到有效坐标！';
+                    generateBtn.disabled = false;
+                    generateBtn.textContent = '确认生成';
+                    return;
+                }
+
+                // 创建点云球体实例
+                const pointCount = allPoints.length / 3;
+                const sphereGeometry = new THREE.SphereGeometry(1.5, 8, 8);
+                const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                const instancedMesh = new THREE.InstancedMesh(sphereGeometry, sphereMaterial, pointCount);
+                const tempMatrix = new THREE.Matrix4();
+                for (let i = 0; i < pointCount; i++) {
+                    tempMatrix.setPosition(
+                        allPoints[i * 3],
+                        allPoints[i * 3 + 1],
+                        allPoints[i * 3 + 2]
+                    );
+                    instancedMesh.setMatrixAt(i, tempMatrix);
+                }
+                scene.add(instancedMesh);
+
+                progressDiv.textContent = `生成完成！总点数：${pointCount}`;
+                generateBtn.textContent = '生成完成';
+            } catch (error) {
+                console.error(error);
+                progressDiv.textContent = `报错：${error.message}`;
+                generateBtn.disabled = false;
+                generateBtn.textContent = '确认生成';
+            }
+        });
+
+        // 窗口自适应
+        window.addEventListener('resize', () => {
+            camera.aspect = canvas.clientWidth / canvas.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+        });
+
+        // 初始化
+        initThreeJS();
+    </script>
 </body>
 </html>
