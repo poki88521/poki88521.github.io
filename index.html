@@ -109,7 +109,7 @@
         // 初始化Three.js
         function initThreeJS() {
             scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(75, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+            camera = new THREE.PerspectiveCamera(75, canvas.clientWidth / canvas.clientHeight, 0.1, 10000);
             renderer = new THREE.WebGLRenderer({ antialias: false });
             renderer.setSize(canvas.clientWidth, canvas.clientHeight);
             canvas.appendChild(renderer.domElement);
@@ -145,7 +145,7 @@
             scene.add(gridYZ);
 
             // 相机位置
-            camera.position.set(50, 50, 50);
+            camera.position.set(500, 500, 500);
             camera.lookAt(0, 0, 0);
 
             // 控制器（无阻尼/无惯性，最简配置）
@@ -222,7 +222,7 @@
                     // 读取规则：跳过表头，第3/4/5列=XYZ
                     for (let row = 1; row < json.length; row++) {
                         const item = json[row];
-                        if (item && item.length >= 5) {
+                        if (item && item.length >= 4) {
                             const x = parseFloat(item[2]);
                             const y = parseFloat(item[3]);
                             const z = parseFloat(item[4]);
@@ -239,7 +239,8 @@
                     generateBtn.textContent = '确认生成';
                     return;
                 }
-
+                // 清空旧点云
+                scene.children = scene.children.filter(obj => obj.type !== 'InstancedMesh');
                 // 创建点云球体实例
                 const pointCount = allPoints.length / 3;
                 const sphereGeometry = new THREE.SphereGeometry(1.5, 8, 8);
